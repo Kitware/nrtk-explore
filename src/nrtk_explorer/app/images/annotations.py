@@ -68,8 +68,9 @@ class DetectionAnnotations:
         self.delete_from_cache_callback = delete_from_cache_callback
 
     def get_annotations(self, detector: ObjectDetector, id_to_image: Dict[str, Image.Image]):
-        hits, misses = partition(self.cache.get_item, id_to_image.keys())
-        cached_predictions = {id: self.cache.get_item(id) for id in hits}
+        hits, misses = partition(
+            lambda id: self.cache.get_item(id) is not None, id_to_image.keys()
+        )
 
         to_detect = {id: id_to_image[id] for id in misses}
         predictions = detector.eval(
@@ -80,8 +81,7 @@ class DetectionAnnotations:
                 id, annotations, self.add_to_cache_callback, self.delete_from_cache_callback
             )
 
-        predictions.update(**cached_predictions)
-        return predictions
+        return {id: self.cache.get_item(id) for id in id_to_image.keys()}
 
     def cache_clear(self):
         self.cache.clear()

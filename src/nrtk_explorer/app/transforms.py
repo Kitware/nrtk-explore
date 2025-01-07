@@ -1,5 +1,6 @@
 import logging
 from typing import Dict, Callable
+from collections.abc import Mapping
 
 from trame.ui.quasar import QLayout
 from trame.widgets import quasar
@@ -43,8 +44,34 @@ INFERENCE_MODELS_DEFAULT = [
 ]
 
 
+UPDATE_IMAGES_CHUNK_SIZE = 32
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+class LazyDict(Mapping):
+    def __init__(self, *args, **kw):
+        self._raw_dict = dict(*args, **kw)
+
+    def __getitem__(self, key):
+        val = self._raw_dict[key]
+        return val() if callable(val) else val
+
+    def __setitem__(self, key, value):
+        self._raw_dict[key] = value
+
+    def __iter__(self):
+        return iter(self._raw_dict)
+
+    def __len__(self):
+        return len(self._raw_dict)
+
+    def values(self):
+        return (self[k] for k in self._raw_dict)
+
+    def items(self):
+        return ((k, self[k]) for k in self._raw_dict)
 
 
 class ProcessingStep:
@@ -156,6 +183,8 @@ class TransformsApp(Applet):
                     delete_state(self.state, dataset_id_to_meta(id))
 
         change_checker(self.state, "dataset_ids")(delete_meta_state)
+        # clear score when changing model
+        # clear score when changing transform
 
         self._parameters_app = ParametersApp(
             server=server,
@@ -197,7 +226,7 @@ class TransformsApp(Applet):
             feature_enabled_state_key="transform_enabled",
             gui_switch_key="transform_enabled_switch",
             column_name=TRANSFORM_COLUMNS[0],
-            enabled_callback=self._start_transformed_images,
+            enabled_callback=self._start_update_images,
         )
 
         self.server.controller.on_server_ready.add(self.on_server_ready)
@@ -232,44 +261,32 @@ class TransformsApp(Applet):
     def on_apply_transform(self, **kwargs):
         # Turn on switch if user clicked lower apply button
         self.state.transform_enabled_switch = True
-        self._start_transformed_images()
+        self._start_update_images()
 
-    def _start_transformed_images(self, *args, **kwargs):
-        logger.debug("_start_transformed_images")
-        if self._updating_images():
-            if self._updating_transformed_images:
-                # computing stale transformed images, restart task
-                self._cancel_update_images()
-            else:
-                return  # update_images will call update_transformed_images() at the end
-        self._update_task = asynchronous.create_task(
-            self.update_transformed_images(self.visible_dataset_ids)
-        )
-
-    async def update_transformed_images(self, dataset_ids):
-        self._updating_transformed_images = True
-        try:
-            await self._update_transformed_images(dataset_ids)
-        finally:
-            self._updating_transformed_images = False
-
-    async def _update_transformed_images(self, dataset_ids):
+    async def update_transformed_images(self, dataset_ids, visible=False):
         if not self.state.transform_enabled:
             return
 
         transforms = list(map(lambda t: t["instance"], self.context.transforms))
         transform = trans.ChainedImageTransform(transforms)
 
-        id_to_matching_size_img = {}
+        id_to_image = LazyDict()
         for id in dataset_ids:
-            with self.state:
-                transformed = self.images.get_stateful_transformed_image(transform, id)
-                id_to_matching_size_img[dataset_id_to_transformed_image_id(id)] = transformed
-            await self.server.network_completion
+            if visible:
+                with self.state:
+                    transformed = self.images.get_stateful_transformed_image(transform, id)
+                    id_to_image[dataset_id_to_transformed_image_id(id)] = transformed
+                await self.server.network_completion
+            else:
+                id_to_image[dataset_id_to_transformed_image_id(id)] = (
+                    lambda id=id: self.images.get_transformed_image_without_cache_eviction(
+                        transform, id
+                    )
+                )
 
         with self.state:
             annotations = self.transformed_detection_annotations.get_annotations(
-                self.detector, id_to_matching_size_img
+                self.detector, id_to_image
             )
         await self.server.network_completion
 
@@ -300,25 +317,26 @@ class TransformsApp(Applet):
                     {"original_detection_to_transformed_detection_score": score},
                 )
 
-        id_to_image = {
-            dataset_id_to_transformed_image_id(id): self.images.get_transformed_image(
-                transform, id
-            )
-            for id in dataset_ids
-        }
-
-        self.on_transform(id_to_image)
-
         self.state.flush()  # needed cuz in async func and modifying state or else UI does not update
+        # sortable score value may have changed which may have changed images that are in view
+        self.server.controller.check_images_in_view()
+
+        self.on_transform(id_to_image)  # inform embeddings app
+        self.state.flush()
 
     def compute_predictions_original_images(self, dataset_ids):
         if not self.state.predictions_original_images_enabled:
             return
 
-        image_id_to_image = {
-            dataset_id_to_image_id(id): self.images.get_image_without_cache_eviction(id)
-            for id in dataset_ids
-        }
+        image_id_to_image = LazyDict(
+            {
+                dataset_id_to_image_id(
+                    id
+                ): lambda id=id: self.images.get_image_without_cache_eviction(id)
+                for id in dataset_ids
+            }
+        )
+
         self.predictions_original_images = self.original_detection_annotations.get_annotations(
             self.detector, image_id_to_image
         )
@@ -336,24 +354,42 @@ class TransformsApp(Applet):
                 self.state, dataset_id, {"original_ground_to_original_detection_score": score}
             )
 
-    async def _update_images(self, dataset_ids):
-        # load images on state for ImageList
-        for id in dataset_ids:
+    async def _update_images(self, dataset_ids, visible=False):
+        if visible:
+            # load images on state for ImageList
             with self.state:
-                self.images.get_stateful_image(id)
+                for id in dataset_ids:
+                    self.images.get_stateful_image(id)
+                self.ground_truth_annotations.get_annotations(dataset_ids)
             await self.server.network_completion
 
-        with self.state:
-            self.ground_truth_annotations.get_annotations(dataset_ids)
-        await self.server.network_completion
-
+        # always push to state because compute_predictions_original_images updates score metadata
         with self.state:
             self.compute_predictions_original_images(dataset_ids)
         await self.server.network_completion
+        # sortable score value may have changed which may have changed images that are in view
+        self.server.controller.check_images_in_view()
+
+        await self.update_transformed_images(dataset_ids, visible=visible)
+
+    async def _chunk_update_images(self, dataset_ids, visible=False):
+        ids = list(dataset_ids)
+
+        for i in range(0, len(ids), UPDATE_IMAGES_CHUNK_SIZE):
+            chunk = ids[i : i + UPDATE_IMAGES_CHUNK_SIZE]
+            await self._update_images(chunk, visible=visible)
+
+    async def _update_all_images(self, visible_images):
+        with self.state:
+            self.state.updating_images = True
+
+        await self._chunk_update_images(visible_images, visible=True)
+
+        other_images = set(self.state.user_selected_ids) - set(visible_images)
+        await self._chunk_update_images(other_images, visible=False)
 
         with self.state:
-            await self.update_transformed_images(dataset_ids)
-        await self.server.network_completion
+            self.state.updating_images = False
 
     def _cancel_update_images(self, **kwargs):
         if hasattr(self, "_update_task"):
@@ -361,10 +397,9 @@ class TransformsApp(Applet):
 
     def _start_update_images(self, **kwargs):
         self._cancel_update_images()
-        self._update_task = asynchronous.create_task(self._update_images(self.visible_dataset_ids))
-
-    def _updating_images(self):
-        return hasattr(self, "_update_task") and not self._update_task.done()
+        self._update_task = asynchronous.create_task(
+            self._update_all_images(self.visible_dataset_ids)
+        )
 
     def on_scroll(self, visible_ids):
         self.visible_dataset_ids = visible_ids

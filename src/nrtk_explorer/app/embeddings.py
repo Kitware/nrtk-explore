@@ -2,6 +2,7 @@ from nrtk_explorer.widgets.nrtk_explorer import ScatterPlot
 from nrtk_explorer.library import embeddings_extractor
 from nrtk_explorer.library import dimension_reducers
 from nrtk_explorer.library.dataset import get_dataset
+from nrtk_explorer.library.scoring import partition
 from nrtk_explorer.app.applet import Applet
 
 from nrtk_explorer.app.images.image_ids import (
@@ -65,9 +66,7 @@ class EmbeddingsApp(Applet):
         self.state.change("dataset_ids")(self.update_points)
 
         self.server.controller.apply_transform.add(self.clear_points_transformations)
-        self.state.change("transform_enabled_switch")(
-            self.update_points_transformations_visibility
-        )
+        self.state.change("transform_enabled_switch")(self.update_points_transformations_state)
 
     def on_feature_extraction_model_change(self, **kwargs):
         feature_extraction_model = self.state.feature_extraction_model
@@ -118,16 +117,16 @@ class EmbeddingsApp(Applet):
         self.state.points_transformations = {}  # ID to point
         self._stashed_points_transformations = {}
 
-    def update_points_transformations_visibility(self, **kwargs):
+    def update_points_transformations_state(self, **kwargs):
         if self.state.transform_enabled_switch:
             self.state.points_transformations = self._stashed_points_transformations
         else:
-            self._stashed_points_transformations = self.state.points_transformations
             self.state.points_transformations = {}
 
     async def compute_source_points(self):
         with self.state:
             self.state.is_loading = True
+            self.clear_points_transformations()
 
         # Don't lock server before enabling the spinner on client
         await self.server.network_completion
@@ -146,8 +145,6 @@ class EmbeddingsApp(Applet):
             id: point for id, point in zip(self.state.dataset_ids, points)
         }
 
-        self.clear_points_transformations()
-
         self.state.camera_position = []
 
         with self.state:
@@ -162,16 +159,25 @@ class EmbeddingsApp(Applet):
         self.update_points()
 
     def on_run_transformations(self, id_to_image):
-        transformation_features = self.extractor.extract(
-            id_to_image.values(),
-            batch_size=int(self.state.model_batch_size),
+        hits, misses = partition(
+            lambda id: image_id_to_dataset_id(id) in self._stashed_points_transformations,
+            id_to_image.keys(),
         )
 
+        to_plot = {id: id_to_image[id] for id in misses}
+        transformation_features = self.extractor.extract(
+            list(to_plot.values()),
+            batch_size=int(self.state.model_batch_size),
+        )
         points = self.compute_points(self.features, transformation_features)
+        ids_to_points = zip(to_plot.keys(), points)
 
-        ids = id_to_image.keys()
-        updated_points = {image_id_to_dataset_id(id): point for id, point in zip(ids, points)}
-        self.state.points_transformations = {**self.state.points_transformations, **updated_points}
+        updated_points = {image_id_to_dataset_id(id): point for id, point in ids_to_points}
+        self._stashed_points_transformations = {
+            **self._stashed_points_transformations,
+            **updated_points,
+        }
+        self.update_points_transformations_state()
 
     # called by category filter
     def on_select(self, image_ids):

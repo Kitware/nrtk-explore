@@ -68,6 +68,8 @@ class ObjectDetector:
         batch_size: int = 0,  # 0 means use last successful batch size
     ) -> ImageIdToAnnotations:
         """Compute object recognition. Returns Annotations grouped by input image paths."""
+        if len(images) == 0:
+            return {}  # optimization
 
         images_with_ids = [ImageWithId(id, img) for id, img in images.items()]
 
