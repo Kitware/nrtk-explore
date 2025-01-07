@@ -5,6 +5,7 @@ from nrtk_explorer.widgets.nrtk_explorer import ScatterPlot
 from nrtk_explorer.library import embeddings_extractor
 from nrtk_explorer.library import dimension_reducers
 from nrtk_explorer.library.dataset import get_dataset
+from nrtk_explorer.library.scoring import partition
 from nrtk_explorer.app.applet import Applet
 
 from nrtk_explorer.app.images.image_ids import (
@@ -230,7 +231,6 @@ class EmbeddingsApp(Applet):
             **self._stashed_points_transformations,
             **updated_points,
         }
-
         self.update_points_transformations_state()
 
     # called by category filter
