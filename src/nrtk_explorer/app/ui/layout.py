@@ -96,11 +96,12 @@ class NrtkDrawer(html.Div):
                     transforms_app.apply_ui()
 
             # Export
-            with ui.CollapsibleCardUnslotted() as card:
-                with card.slot_title:
-                    html.Span("Export Dataset", classes="text-h6")
-                with card.slot_collapse:
-                    export_app.export_ui()
+            if export_app.context.repository is not None:
+                with ui.CollapsibleCardUnslotted() as card:
+                    with card.slot_title:
+                        html.Span("Export Dataset", classes="text-h6")
+                    with card.slot_collapse:
+                        export_app.export_ui()
 
             # Filters
             with ui.CollapsibleCard() as card:

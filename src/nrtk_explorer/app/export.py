@@ -30,19 +30,13 @@ class ExportApp(Applet):
     def __init__(self, server):
         super().__init__(server)
 
-        self.context.setdefault("repository", "")
+        self.context.setdefault("repository", None)
         self.state.setdefault("current_dataset", "")
         self.state.setdefault("repository_datasets", [])
         self.state.setdefault("export_status", "idle")
         self.state.setdefault("export_progress", 0)
 
-        self.server.controller.add("on_server_ready")(self.on_server_ready)
-
         self._ui = None
-
-    def on_server_ready(self, *args, **kwargs):
-        # Bind instance methods to state change
-        pass
 
     def on_export_clicked(self, event):
         self.start_export(event["name"], event["full"])
@@ -54,6 +48,9 @@ class ExportApp(Applet):
         self._export_task = asynchronous.create_task(self.export_dataset(name, full))
 
     async def export_dataset(self, name, full):
+        if self.context.repository is None:
+            return
+
         with self.state:
             self.state.export_status = "pending"
             self.state.export_progress = 0
@@ -93,7 +90,6 @@ class ExportApp(Applet):
             new_instance.set_parameters(instance.get_parameters())
             transforms.append(new_instance)
 
-        # transforms = list(map(lambda t: t["instance"], self.context.transforms))
         transform = trans.ChainedImageTransform(transforms)
 
         dataset = self.context.dataset
@@ -129,7 +125,6 @@ class ExportApp(Applet):
                 Path.mkdir(destination_dir, parents=True)
 
             img = dataset.get_image(image_id)
-            img.load()  # Avoid OSError(24, 'Too many open files')
             # transforms require RGB mode
             img = img.convert("RGB") if img.mode != "RGB" else img
 
@@ -167,9 +162,6 @@ class ExportApp(Applet):
         return hasattr(self, "_export_task") and not self._export_task.done()
 
     def export_ui(self):
-        self.form_ui()
-
-    def form_ui(self):
         with html.Div(trame_server=self.server):
             ExportWidget(
                 current_dataset=("current_dataset",),
