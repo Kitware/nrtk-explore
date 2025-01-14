@@ -32,7 +32,7 @@ DIR_NAME = os.path.dirname(nrtk_explorer.test_data.__file__)
 DEFAULT_DATASETS = [
     f"{DIR_NAME}/coco-od-2017/test_val2017.json",
 ]
-NUM_IMAGES_DEFAULT = 200
+NUM_IMAGES_DEFAULT = 500
 NUM_IMAGES_DEBOUNCE_TIME = 0.3  # seconds
 
 

@@ -10,7 +10,7 @@ from trame_server import Server
 
 import nrtk_explorer.library.transforms as trans
 import nrtk_explorer.library.yaml_transforms as nrtk_yaml
-from nrtk_explorer.library import object_detector
+from nrtk_explorer.library.multiprocess_predictor import MultiprocessPredictor
 from nrtk_explorer.library.app_config import process_config
 from nrtk_explorer.library.scoring import (
     compute_score,
@@ -235,9 +235,10 @@ class TransformsApp(Applet):
 
         self.visible_dataset_ids = []  # set by ImageList via self.on_scroll callback
 
+        self.predictor = MultiprocessPredictor(model_name=self.state.inference_model)
+
     def on_server_ready(self, *args, **kwargs):
         self.state.change("inference_model")(self.on_inference_model_change)
-        self.on_inference_model_change()
         self.state.change("current_dataset")(self._cancel_update_images)
         self.state.change("current_dataset")(self.reset_detector)
         self.state.change("confidence_score_threshold")(self._start_update_images)
@@ -245,11 +246,11 @@ class TransformsApp(Applet):
     def on_inference_model_change(self, **kwargs):
         self.original_detection_annotations.cache_clear()
         self.transformed_detection_annotations.cache_clear()
-        self.detector = object_detector.ObjectDetector(model_name=self.state.inference_model)
+        self.predictor.set_model(self.state.inference_model)
         self._start_update_images()
 
     def reset_detector(self, **kwargs):
-        self.detector.reset()
+        self.predictor.reset()
 
     def set_on_transform(self, fn):
         self._on_transform_fn = fn
@@ -285,8 +286,8 @@ class TransformsApp(Applet):
                 )
 
         with self.state:
-            annotations = self.transformed_detection_annotations.get_annotations(
-                self.detector, id_to_image
+            annotations = await self.transformed_detection_annotations.get_annotations(
+                self.predictor, id_to_image
             )
         await self.server.network_completion
 
@@ -324,7 +325,7 @@ class TransformsApp(Applet):
         self.on_transform(id_to_image)  # inform embeddings app
         self.state.flush()
 
-    def compute_predictions_original_images(self, dataset_ids):
+    async def compute_predictions_original_images(self, dataset_ids):
         if not self.state.predictions_original_images_enabled:
             return
 
@@ -337,8 +338,10 @@ class TransformsApp(Applet):
             }
         )
 
-        self.predictions_original_images = self.original_detection_annotations.get_annotations(
-            self.detector, image_id_to_image
+        self.predictions_original_images = (
+            await self.original_detection_annotations.get_annotations(
+                self.predictor, image_id_to_image
+            )
         )
 
         ground_truth_annotations = self.ground_truth_annotations.get_annotations(dataset_ids)
@@ -365,7 +368,7 @@ class TransformsApp(Applet):
 
         # always push to state because compute_predictions_original_images updates score metadata
         with self.state:
-            self.compute_predictions_original_images(dataset_ids)
+            await self.compute_predictions_original_images(dataset_ids)
         await self.server.network_completion
         # sortable score value may have changed which may have changed images that are in view
         self.server.controller.check_images_in_view()

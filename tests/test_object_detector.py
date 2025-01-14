@@ -1,7 +1,9 @@
+import pytest
 from nrtk_explorer.library import object_detector
 from nrtk_explorer.library.scoring import compute_score
 from nrtk_explorer.library.dataset import get_dataset
 from utils import get_images, DATASET
+from nrtk_explorer.library.multiprocess_predictor import MultiprocessPredictor
 
 
 def test_detector_small():
@@ -9,6 +11,36 @@ def test_detector_small():
     detector = object_detector.ObjectDetector(model_name="hustvl/yolos-tiny")
     img = detector.eval(sample)
     assert len(img) == len(sample.keys())
+
+
+@pytest.fixture
+def predictor():
+    predictor = MultiprocessPredictor(model_name="facebook/detr-resnet-50")
+    yield predictor
+    predictor.shutdown()
+
+
+def test_detect(predictor):
+    """Test the detect method with sample images."""
+    images = get_images()
+    results = predictor.infer(images)
+    assert len(results) == len(images), "Number of results should match number of images"
+    for img_id, preds in results.items():
+        assert isinstance(preds, list), f"Predictions for {img_id} should be a list"
+
+
+def test_set_model(predictor):
+    """Test setting a new model and performing detection."""
+    predictor.set_model(model_name="hustvl/yolos-tiny")
+    images = get_images()
+    results = predictor.infer(images)
+    assert len(results) == len(
+        images
+    ), "Number of results should match number of images after setting new model"
+    for img_id, preds in results.items():
+        assert isinstance(
+            preds, list
+        ), f"Predictions for {img_id} should be a list after setting new model"
 
 
 def test_scorer():

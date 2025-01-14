@@ -50,12 +50,9 @@ class ObjectDetector:
     @pipeline.setter
     def pipeline(self, model_name: str):
         """Set the pipeline for object detection using Hugging Face's transformers library"""
-        if self.task is None:
-            self._pipeline = transformers.pipeline(model=model_name, device=self.device)
-        else:
-            self._pipeline = transformers.pipeline(
-                model=model_name, device=self.device, task=self.task
-            )
+        self._pipeline = transformers.pipeline(
+            model=model_name, device=self.device, task=self.task, use_fast=True
+        )
         # Do not display warnings
         transformers.utils.logging.set_verbosity_error()
 
@@ -109,7 +106,7 @@ class ObjectDetector:
                     self.batch_size = self.batch_size // 2
                     self.batch_size = self.batch_size
                     print(
-                        f"OOM (Pytorch exception {e}) due to batch_size={previous_batch_size}, setting batch_size={self.batch_size}"
+                        f"Caught out of memory exception:\n{e}\nWas batch_size={previous_batch_size}, setting batch_size={self.batch_size}"
                     )
                 else:
                     raise
