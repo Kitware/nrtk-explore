@@ -4,12 +4,12 @@ import threading
 import logging
 import queue
 import uuid
-from .object_detector import ObjectDetector
+from .predictor import Predictor
 
 
 def _child_worker(request_queue, result_queue, model_name, force_cpu):
     logger = logging.getLogger(__name__)
-    detector = ObjectDetector(model_name=model_name, force_cpu=force_cpu)
+    predictor = Predictor(model_name=model_name, force_cpu=force_cpu)
 
     while True:
         try:
@@ -28,7 +28,7 @@ def _child_worker(request_queue, result_queue, model_name, force_cpu):
 
         if command == "SET_MODEL":
             try:
-                detector = ObjectDetector(
+                predictor = Predictor(
                     model_name=payload["model_name"],
                     force_cpu=payload["force_cpu"],
                 )
@@ -38,14 +38,14 @@ def _child_worker(request_queue, result_queue, model_name, force_cpu):
                 result_queue.put((req_id, {"status": "ERROR", "message": str(e)}))
         elif command == "INFER":
             try:
-                predictions = detector.eval(payload["images"])
+                predictions = predictor.eval(payload["images"])
                 result_queue.put((req_id, {"status": "OK", "result": predictions}))
             except Exception as e:
                 logger.exception("Inference failed.")
                 result_queue.put((req_id, {"status": "ERROR", "message": str(e)}))
         elif command == "RESET":
             try:
-                detector.reset()
+                predictor.reset()
                 result_queue.put((req_id, {"status": "OK"}))
             except Exception as e:
                 logger.exception("Reset failed.")

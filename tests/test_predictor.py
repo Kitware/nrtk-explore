@@ -1,15 +1,15 @@
 import pytest
-from nrtk_explorer.library import object_detector
+from nrtk_explorer.library.predictor import Predictor
+from nrtk_explorer.library.multiprocess_predictor import MultiprocessPredictor
 from nrtk_explorer.library.scoring import compute_score
 from nrtk_explorer.library.dataset import get_dataset
 from utils import get_images, DATASET
-from nrtk_explorer.library.multiprocess_predictor import MultiprocessPredictor
 
 
-def test_detector_small():
+def test_predictor_small():
     sample = get_images()
-    detector = object_detector.ObjectDetector(model_name="hustvl/yolos-tiny")
-    img = detector.eval(sample)
+    predictor = Predictor(model_name="hustvl/yolos-tiny")
+    img = predictor.eval(sample)
     assert len(img) == len(sample.keys())
 
 
@@ -46,8 +46,8 @@ def test_set_model(predictor):
 def test_scorer():
     ds = get_dataset(DATASET)
     sample = get_images()
-    detector = object_detector.ObjectDetector(model_name="facebook/detr-resnet-50")
-    predictions = detector.eval(sample)
+    predictor = Predictor(model_name="facebook/detr-resnet-50")
+    predictions = predictor.eval(sample)
 
     dataset_annotations = dict()
     for annotation in ds.anns.values():

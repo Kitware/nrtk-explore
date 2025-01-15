@@ -51,6 +51,8 @@ logger.setLevel(logging.INFO)
 
 
 class LazyDict(Mapping):
+    """If function provided for value, run function when value is accessed"""
+
     def __init__(self, *args, **kw):
         self._raw_dict = dict(*args, **kw)
 
@@ -240,7 +242,7 @@ class TransformsApp(Applet):
     def on_server_ready(self, *args, **kwargs):
         self.state.change("inference_model")(self.on_inference_model_change)
         self.state.change("current_dataset")(self._cancel_update_images)
-        self.state.change("current_dataset")(self.reset_detector)
+        self.state.change("current_dataset")(self.reset_predictor)
         self.state.change("confidence_score_threshold")(self._start_update_images)
 
     def on_inference_model_change(self, **kwargs):
@@ -249,7 +251,7 @@ class TransformsApp(Applet):
         self.predictor.set_model(self.state.inference_model)
         self._start_update_images()
 
-    def reset_detector(self, **kwargs):
+    def reset_predictor(self, **kwargs):
         self.predictor.reset()
 
     def set_on_transform(self, fn):
@@ -399,6 +401,13 @@ class TransformsApp(Applet):
             self._update_task.cancel()
 
     def _start_update_images(self, **kwargs):
+        """
+        After updating the images visible in the image list, all other selected
+        images are updated and their scores computed. After images are scored,
+        the table sort may have changed the images that are visible, so
+        ImageList is asked to send visible image IDs again, which may trigger
+        a new _update_all_images if the set of images in view has changed.
+        """
         self._cancel_update_images()
         self._update_task = asynchronous.create_task(
             self._update_all_images(self.visible_dataset_ids)

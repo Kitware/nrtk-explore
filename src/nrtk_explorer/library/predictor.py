@@ -17,8 +17,7 @@ class ImageWithId(NamedTuple):
 STARTING_BATCH_SIZE = 32
 
 
-class ObjectDetector:
-    """Object detection using Hugging Face's transformers library"""
+class Predictor:
 
     def __init__(
         self,
@@ -106,7 +105,7 @@ class ObjectDetector:
                     self.batch_size = self.batch_size // 2
                     self.batch_size = self.batch_size
                     print(
-                        f"Caught out of memory exception:\n{e}\nWas batch_size={previous_batch_size}, setting batch_size={self.batch_size}"
+                        f"Changing pipeline batch_size from {previous_batch_size} to {self.batch_size} because caught out of memory exception:\n{e}"
                     )
                 else:
                     raise
