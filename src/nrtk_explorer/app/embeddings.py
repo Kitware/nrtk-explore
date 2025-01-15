@@ -40,7 +40,7 @@ class EmbeddingsApp(Applet):
         if self.is_standalone_app and datasets:
             self.state.dataset_ids = []
             self.state.current_dataset = datasets[0]
-            self.on_current_dataset_change()
+            self.context.dataset = get_dataset(self.state.current_dataset)
 
         self.features = None
 
@@ -55,10 +55,6 @@ class EmbeddingsApp(Applet):
         }
 
     def on_server_ready(self, *args, **kwargs):
-        # Bind instance methods to state change
-        self.on_current_dataset_change()
-        self.state.change("current_dataset")(self.on_current_dataset_change)
-
         self.on_feature_extraction_model_change()
         self.state.change("feature_extraction_model")(self.on_feature_extraction_model_change)
 
@@ -73,14 +69,6 @@ class EmbeddingsApp(Applet):
         self.extractor = embeddings_extractor.EmbeddingsExtractor(
             model_name=feature_extraction_model
         )
-
-    def on_current_dataset_change(self, **kwargs):
-        self.state.num_elements_disabled = True
-        if self.context.dataset is None:
-            self.context.dataset = get_dataset(self.state.current_dataset)
-
-        self.state.num_elements_max = len(list(self.context.dataset.imgs))
-        self.state.num_elements_disabled = False
 
     def compute_points(self, fit_features, features):
         if len(features) == 0:
@@ -114,7 +102,7 @@ class EmbeddingsApp(Applet):
         )
 
     def clear_points_transformations(self, **kwargs):
-        self.state.points_transformations = {}  # ID to point
+        self.state.points_transformations = {}  # datset ID to point
         self._stashed_points_transformations = {}
 
     def update_points_transformations_state(self, **kwargs):
