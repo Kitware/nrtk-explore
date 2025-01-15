@@ -266,7 +266,9 @@ class TransformsApp(Applet):
         self.state.transform_enabled_switch = True
         self._start_update_images()
 
-    async def update_transformed_images(self, dataset_ids, visible=False):
+    async def update_transformed_images(
+        self, dataset_ids, predictions_original_images, visible=False
+    ):
         if not self.state.transform_enabled:
             return
 
@@ -306,10 +308,10 @@ class TransformsApp(Applet):
             )
 
         # depends on original images predictions
-        if self.state.predictions_original_images_enabled:
+        if predictions_original_images:
             scores = compute_score(
                 self.context.dataset,
-                self.predictions_original_images,
+                predictions_original_images,
                 annotations,
                 self.state.confidence_score_threshold,
             )
@@ -340,10 +342,8 @@ class TransformsApp(Applet):
             }
         )
 
-        self.predictions_original_images = (
-            await self.original_detection_annotations.get_annotations(
-                self.predictor, image_id_to_image
-            )
+        predictions_original_images = await self.original_detection_annotations.get_annotations(
+            self.predictor, image_id_to_image
         )
 
         ground_truth_annotations = self.ground_truth_annotations.get_annotations(dataset_ids)
@@ -351,13 +351,15 @@ class TransformsApp(Applet):
         scores = compute_score(
             self.context.dataset,
             ground_truth_annotations,
-            self.predictions_original_images,
+            predictions_original_images,
             self.state.confidence_score_threshold,
         )
         for dataset_id, score in scores:
             update_image_meta(
                 self.state, dataset_id, {"original_ground_to_original_detection_score": score}
             )
+
+        return predictions_original_images
 
     async def _update_images(self, dataset_ids, visible=False):
         if visible:
@@ -370,16 +372,19 @@ class TransformsApp(Applet):
 
         # always push to state because compute_predictions_original_images updates score metadata
         with self.state:
-            await self.compute_predictions_original_images(dataset_ids)
+            predictions_original_images = await self.compute_predictions_original_images(
+                dataset_ids
+            )
         await self.server.network_completion
         # sortable score value may have changed which may have changed images that are in view
         self.server.controller.check_images_in_view()
 
-        await self.update_transformed_images(dataset_ids, visible=visible)
+        await self.update_transformed_images(
+            dataset_ids, predictions_original_images, visible=visible
+        )
 
     async def _chunk_update_images(self, dataset_ids, visible=False):
         ids = list(dataset_ids)
-
         for i in range(0, len(ids), UPDATE_IMAGES_CHUNK_SIZE):
             chunk = ids[i : i + UPDATE_IMAGES_CHUNK_SIZE]
             await self._update_images(chunk, visible=visible)
