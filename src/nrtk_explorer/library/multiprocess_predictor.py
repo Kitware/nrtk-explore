@@ -1,4 +1,5 @@
 import multiprocessing
+import asyncio
 import signal
 import threading
 import logging
@@ -8,6 +9,7 @@ from .predictor import Predictor
 
 
 def _child_worker(request_queue, result_queue, model_name, force_cpu):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ignore Ctrl+C in child
     logger = logging.getLogger(__name__)
     predictor = Predictor(model_name=model_name, force_cpu=force_cpu)
 
@@ -105,7 +107,7 @@ class MultiprocessPredictor:
             )
             return self._wait_for_response(req_id)
 
-    def infer(self, images):
+    async def infer(self, images):
         if not images:
             return {}
         with self._lock:
@@ -113,23 +115,29 @@ class MultiprocessPredictor:
             new_req = {"command": "INFER", "req_id": req_id, "payload": {"images": images}}
             self._request_queue.put(new_req)
 
-        resp = self._wait_for_response(req_id)
+        resp = await self._wait_for_response_async(req_id)
         return resp.get("result")
+
+    async def _wait_for_response_async(self, req_id):
+        return await asyncio.get_event_loop().run_in_executor(None, self._get_response, req_id, 40)
+
+    def _wait_for_response(self, req_id):
+        return self._get_response(req_id, 40)
+
+    def _get_response(self, req_id, timeout=40):
+        while True:
+            try:
+                r_id, data = self._result_queue.get(timeout=timeout)
+            except queue.Empty:
+                raise TimeoutError("No response from worker.")
+            if r_id == req_id:
+                return data
 
     def reset(self):
         with self._lock:
             req_id = str(uuid.uuid4())
             self._request_queue.put({"command": "RESET", "req_id": req_id})
             return self._wait_for_response(req_id)
-
-    def _wait_for_response(self, req_id):
-        while True:
-            try:
-                r_id, data = self._result_queue.get(timeout=40)
-            except queue.Empty:
-                raise TimeoutError("No response from worker.")
-            if r_id == req_id:
-                return data
 
     def shutdown(self):
         with self._lock:
