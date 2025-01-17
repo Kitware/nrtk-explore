@@ -276,7 +276,7 @@ class EmbeddingsApp(Applet):
         with html.Div(trame_server=self.server, classes="col"):
             with html.Div(classes="q-gutter-y-md"):
                 quasar.QBtnToggle(
-                    v_model=("dimensionality", "3"),
+                    v_model=("dimensionality", "2"),
                     toggler_color="primary",
                     flat=True,
                     spread=True,

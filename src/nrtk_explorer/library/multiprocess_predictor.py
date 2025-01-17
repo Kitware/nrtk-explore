@@ -7,6 +7,8 @@ import queue
 import uuid
 from .predictor import Predictor
 
+WORKER_RESPONSE_TIMEOUT = 40
+
 
 def _child_worker(request_queue, result_queue, model_name, force_cpu):
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ignore Ctrl+C in child
@@ -31,8 +33,7 @@ def _child_worker(request_queue, result_queue, model_name, force_cpu):
         if command == "SET_MODEL":
             try:
                 predictor = Predictor(
-                    model_name=payload["model_name"],
-                    force_cpu=payload["force_cpu"],
+                    model_name=payload["model_name"], force_cpu=payload["force_cpu"]
                 )
                 result_queue.put((req_id, {"status": "OK"}))
             except Exception as e:
@@ -90,6 +91,23 @@ class MultiprocessPredictor:
             )
             self._proc.start()
 
+    def _get_response(self, req_id, timeout=WORKER_RESPONSE_TIMEOUT):
+        while True:
+            try:
+                r_id, data = self._result_queue.get(timeout=timeout)
+            except queue.Empty:
+                raise TimeoutError("No response from worker.")
+            if r_id == req_id:
+                return data
+
+    def _wait_for_response(self, req_id):
+        return self._get_response(req_id, WORKER_RESPONSE_TIMEOUT)
+
+    async def _wait_for_response_async(self, req_id):
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self._get_response, req_id, WORKER_RESPONSE_TIMEOUT
+        )
+
     def set_model(self, model_name, force_cpu=False):
         with self._lock:
             self.model_name = model_name
@@ -117,21 +135,6 @@ class MultiprocessPredictor:
 
         resp = await self._wait_for_response_async(req_id)
         return resp.get("result")
-
-    async def _wait_for_response_async(self, req_id):
-        return await asyncio.get_event_loop().run_in_executor(None, self._get_response, req_id, 40)
-
-    def _wait_for_response(self, req_id):
-        return self._get_response(req_id, 40)
-
-    def _get_response(self, req_id, timeout=40):
-        while True:
-            try:
-                r_id, data = self._result_queue.get(timeout=timeout)
-            except queue.Empty:
-                raise TimeoutError("No response from worker.")
-            if r_id == req_id:
-                return data
 
     def reset(self):
         with self._lock:

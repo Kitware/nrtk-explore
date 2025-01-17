@@ -42,7 +42,7 @@ type Events = {
 const emit = defineEmits<Events>()
 
 const plotContainer = ref<HTMLDivElement>()
-const selectMode = ref<boolean>(false)
+const selectMode = ref<boolean>(true)
 const colors = ref({ viridis, cividis, magma, inferno })
 const colorMapName = ref<keyof typeof colors.value>('viridis')
 const domain: Vector2<number> = [0, 1]
@@ -174,6 +174,8 @@ onMounted(() => {
 
   // Without this there is an error upon browser refresh when sequences are defined.
   scatterPlot.render(dataset.value)
+  // needs to be after render or pan mode and select are initially active at the same time
+  scatterPlot.setSelectMode()
 })
 
 function emitCameraPosition() {
