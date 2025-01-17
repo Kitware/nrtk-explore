@@ -8,6 +8,7 @@ from PIL.Image import Image
 from torch.utils.data import DataLoader, Dataset
 
 IMAGE_MODEL_RESOLUTION = (224, 224)
+STARTING_BATCH_SIZE = 32
 
 
 # Create a dataset for images
@@ -26,6 +27,10 @@ class EmbeddingsExtractor:
     def __init__(self, model_name="resnet50d", force_cpu=False):
         self.device = "cuda" if torch.cuda.is_available() and not force_cpu else "cpu"
         self.model = model_name
+        self.reset()
+
+    def reset(self):
+        self.batch_size = STARTING_BATCH_SIZE
 
     @property
     def device(self):
@@ -57,20 +62,21 @@ class EmbeddingsExtractor:
         img = image.resize(IMAGE_MODEL_RESOLUTION).convert("RGB")
         return self._model_transformer(img).unsqueeze(0)
 
-    def extract(self, images, batch_size=32):
+    def extract(self, images, batch_size=0):
         """Extract features from images"""
         if len(images) == 0:
             return []
 
+        if batch_size != 0:
+            self.batch_size = batch_size
+
         features = list()
         transformed_images = [self.transform_image(img) for img in images]
 
-        # Extract features from images
-        adjusted_batch_size = batch_size
-        while adjusted_batch_size > 0:
+        while self.batch_size > 0:
             try:
                 for batch in DataLoader(
-                    ImagesDataset(transformed_images), batch_size=adjusted_batch_size
+                    ImagesDataset(transformed_images), batch_size=self.batch_size
                 ):
                     # Copy image to device if using device
                     if self.device.type == "cuda":
@@ -80,11 +86,11 @@ class EmbeddingsExtractor:
                 return np.vstack(features)
 
             except RuntimeError as e:
-                if "out of memory" in str(e) and adjusted_batch_size > 1:
-                    previous_batch_size = adjusted_batch_size
-                    adjusted_batch_size = adjusted_batch_size // 2
+                if "out of memory" in str(e) and self.batch_size > 1:
+                    previous_batch_size = self.batch_size
+                    self.batch_size //= 2
                     print(
-                        f"OOM (Pytorch exception {e}) due to batch_size={previous_batch_size}, setting batch_size={adjusted_batch_size}"
+                        f"Changing extract batch_size from {previous_batch_size} to {self.batch_size} because caught out of memory exception:\n{e}"
                     )
                 else:
                     raise
