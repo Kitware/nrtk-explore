@@ -125,6 +125,9 @@ onMounted(() => {
   scatterPlot = new ScatterGL(plotContainer.value, {
     rotateOnStart: false,
     selectEnabled: true,
+    styles: {
+      axesVisible: true
+    },
     pointColorer(i) {
       const id = indexToId(i)
       const isTrans = isTransformed(i)
@@ -165,6 +168,8 @@ onMounted(() => {
     }
   })
   scatterPlotRef.value = scatterPlot
+  // @ts-expect-error: force axes in 2D mode
+  scatterPlot.scatterPlot.add3dAxes()
 
   const cameraControls = ((scatterPlot as any).scatterPlot as any).orbitCameraControls
   cameraControls.addEventListener('start', emitCameraPosition)
