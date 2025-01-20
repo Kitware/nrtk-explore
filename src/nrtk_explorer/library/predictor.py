@@ -17,8 +17,7 @@ class ImageWithId(NamedTuple):
 STARTING_BATCH_SIZE = 32
 
 
-class ObjectDetector:
-    """Object detection using Hugging Face's transformers library"""
+class Predictor:
 
     def __init__(
         self,
@@ -50,12 +49,9 @@ class ObjectDetector:
     @pipeline.setter
     def pipeline(self, model_name: str):
         """Set the pipeline for object detection using Hugging Face's transformers library"""
-        if self.task is None:
-            self._pipeline = transformers.pipeline(model=model_name, device=self.device)
-        else:
-            self._pipeline = transformers.pipeline(
-                model=model_name, device=self.device, task=self.task
-            )
+        self._pipeline = transformers.pipeline(
+            model=model_name, device=self.device, task=self.task, use_fast=True
+        )
         # Do not display warnings
         transformers.utils.logging.set_verbosity_error()
 
@@ -68,6 +64,8 @@ class ObjectDetector:
         batch_size: int = 0,  # 0 means use last successful batch size
     ) -> ImageIdToAnnotations:
         """Compute object recognition. Returns Annotations grouped by input image paths."""
+        if len(images) == 0:
+            return {}  # optimization
 
         images_with_ids = [ImageWithId(id, img) for id, img in images.items()]
 
@@ -107,7 +105,7 @@ class ObjectDetector:
                     self.batch_size = self.batch_size // 2
                     self.batch_size = self.batch_size
                     print(
-                        f"OOM (Pytorch exception {e}) due to batch_size={previous_batch_size}, setting batch_size={self.batch_size}"
+                        f"Changing pipeline batch_size from {previous_batch_size} to {self.batch_size} because caught out of memory exception:\n{e}"
                     )
                 else:
                     raise

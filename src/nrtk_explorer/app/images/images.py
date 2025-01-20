@@ -18,7 +18,7 @@ def convert_to_base64(img: Image.Image) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-IMAGE_CACHE_SIZE = 200
+IMAGE_CACHE_SIZE = 500
 
 
 @TrameApp()
@@ -74,11 +74,15 @@ class Images:
             return transformed.resize(original.size)
         return transformed
 
-    def get_transformed_image(self, transform: ImageTransform, dataset_id: str, **kwargs):
+    def _get_transformed_image(self, transform: ImageTransform, dataset_id: str, **kwargs):
         image_id = dataset_id_to_transformed_image_id(dataset_id)
         image = self.transformed_images.get_item(image_id) or self._load_transformed_image(
             transform, dataset_id
         )
+        return image_id, image
+
+    def get_transformed_image(self, transform: ImageTransform, dataset_id: str, **kwargs):
+        image_id, image = self._get_transformed_image(transform, dataset_id, **kwargs)
         self.transformed_images.add_item(image_id, image, **kwargs)
         return image
 
@@ -89,6 +93,13 @@ class Images:
             on_add_item=self._add_image_to_state,
             on_clear_item=self._delete_from_state,
         )
+
+    def get_transformed_image_without_cache_eviction(
+        self, transform: ImageTransform, dataset_id: str
+    ):
+        image_id, image = self._get_transformed_image(transform, dataset_id)
+        self.transformed_images.add_if_room(image_id, image)
+        return image
 
     @change("current_dataset")
     def clear_all(self, **kwargs):
