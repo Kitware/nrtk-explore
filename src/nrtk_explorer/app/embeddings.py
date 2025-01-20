@@ -5,6 +5,7 @@ from nrtk_explorer.widgets.nrtk_explorer import ScatterPlot
 from nrtk_explorer.library import embeddings_extractor
 from nrtk_explorer.library import dimension_reducers
 from nrtk_explorer.library.dataset import get_dataset
+from nrtk_explorer.library.scoring import partition
 from nrtk_explorer.app.applet import Applet
 
 from nrtk_explorer.app.images.image_ids import (
@@ -107,9 +108,8 @@ class EmbeddingsApp(Applet):
         self.state.change("transform_enabled_switch")(self.update_points_transformations_state)
 
     def on_feature_extraction_model_change(self, **kwargs):
-        feature_extraction_model = self.state.feature_extraction_model
         self.extractor = embeddings_extractor.EmbeddingsExtractor(
-            model_name=feature_extraction_model
+            model_name=self.state.feature_extraction_model
         )
 
     def compute_points(self, fit_features, features):
@@ -159,10 +159,7 @@ class EmbeddingsApp(Applet):
         images = [
             self.images.get_image_without_cache_eviction(id) for id in self.state.dataset_ids
         ]
-        self.features = self.extractor.extract(
-            images,
-            batch_size=int(self.state.model_batch_size),
-        )
+        self.features = self.extractor.extract(images)
 
         points = self.compute_points(self.features, self.features)
 
@@ -218,10 +215,7 @@ class EmbeddingsApp(Applet):
             if image_id_to_dataset_id(id) not in self._stashed_points_transformations
         }
 
-        transformation_features = self.extractor.extract(
-            list(new_to_plot.values()),
-            batch_size=int(self.state.model_batch_size),
-        )
+        transformation_features = self.extractor.extract(list(new_to_plot.values()))
         points = self.compute_points(self.features, transformation_features)
         image_id_to_point = zip(new_to_plot.keys(), points)
 
@@ -230,7 +224,6 @@ class EmbeddingsApp(Applet):
             **self._stashed_points_transformations,
             **updated_points,
         }
-
         self.update_points_transformations_state()
 
     # called by category filter
@@ -283,7 +276,7 @@ class EmbeddingsApp(Applet):
         with html.Div(trame_server=self.server, classes="col"):
             with html.Div(classes="q-gutter-y-md"):
                 quasar.QBtnToggle(
-                    v_model=("dimensionality", "3"),
+                    v_model=("dimensionality", "2"),
                     toggler_color="primary",
                     flat=True,
                     spread=True,
@@ -311,13 +304,6 @@ class EmbeddingsApp(Applet):
                 filled=True,
                 emit_value=True,
                 map_options=True,
-            )
-            quasar.QInput(
-                v_model=("model_batch_size", 32),
-                filled=True,
-                stack_label=True,
-                label="Batch Size",
-                type="number",
             )
 
         with html.Div(classes="col"):

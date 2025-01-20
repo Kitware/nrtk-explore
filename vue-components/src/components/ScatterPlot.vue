@@ -42,7 +42,7 @@ type Events = {
 const emit = defineEmits<Events>()
 
 const plotContainer = ref<HTMLDivElement>()
-const selectMode = ref<boolean>(false)
+const selectMode = ref<boolean>(true)
 const colors = ref({ viridis, cividis, magma, inferno })
 const colorMapName = ref<keyof typeof colors.value>('viridis')
 const domain: Vector2<number> = [0, 1]
@@ -125,6 +125,9 @@ onMounted(() => {
   scatterPlot = new ScatterGL(plotContainer.value, {
     rotateOnStart: false,
     selectEnabled: true,
+    styles: {
+      axesVisible: true
+    },
     pointColorer(i) {
       const id = indexToId(i)
       const isTrans = isTransformed(i)
@@ -165,6 +168,8 @@ onMounted(() => {
     }
   })
   scatterPlotRef.value = scatterPlot
+  // @ts-expect-error: force axes in 2D mode
+  scatterPlot.scatterPlot.add3dAxes()
 
   const cameraControls = ((scatterPlot as any).scatterPlot as any).orbitCameraControls
   cameraControls.addEventListener('start', emitCameraPosition)
@@ -174,6 +179,8 @@ onMounted(() => {
 
   // Without this there is an error upon browser refresh when sequences are defined.
   scatterPlot.render(dataset.value)
+  // needs to be after render or pan mode and select are initially active at the same time
+  scatterPlot.setSelectMode()
 })
 
 function emitCameraPosition() {
