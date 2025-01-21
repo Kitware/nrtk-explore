@@ -1,16 +1,24 @@
 import logging
 from typing import Iterable
 
+from pathlib import Path
+
 from trame.widgets import html
 from trame_server.utils.namespace import Translator
 from nrtk_explorer.library.filtering import FilterProtocol
-from nrtk_explorer.library.dataset import get_dataset, expand_hugging_face_datasets
+from nrtk_explorer.library.dataset import (
+    get_dataset,
+    expand_hugging_face_datasets,
+    discover_datasets,
+    dataset_select_options,
+)
 from nrtk_explorer.library.debounce import debounce
 from nrtk_explorer.library.app_config import process_config
 
 
 from nrtk_explorer.app.images.images import Images
 from nrtk_explorer.app.embeddings import EmbeddingsApp
+from nrtk_explorer.app.export import ExportApp
 from nrtk_explorer.app.transforms import TransformsApp
 from nrtk_explorer.app.filtering import FilteringApp
 from nrtk_explorer.app.applet import Applet
@@ -36,6 +44,14 @@ NUM_IMAGES_DEFAULT = 500
 NUM_IMAGES_DEBOUNCE_TIME = 0.3  # seconds
 
 
+def dir_path(arg):
+    path = Path(arg).resolve()
+    if path.is_dir():
+        return path
+    else:
+        raise NotADirectoryError(arg)
+
+
 # ---------------------------------------------------------
 # Engine class
 # ---------------------------------------------------------
@@ -57,6 +73,15 @@ config_options = {
             "help": "Download Hugging Face Hub datasets instead of streaming them",
         },
     },
+    "repository": {
+        "flags": ["--repository"],
+        "params": {
+            "default": None,
+            "required": False,
+            "type": dir_path,
+            "help": "Path to the directory where exported datasets will be saved to",
+        },
+    },
 }
 
 
@@ -66,11 +91,20 @@ class Engine(Applet):
 
         config = process_config(self.server.cli, config_options, **kwargs)
 
-        dataset_identifiers = expand_hugging_face_datasets(
+        self.state.input_datasets = expand_hugging_face_datasets(
             config["dataset"], not config["download"]
         )
-        self.input_paths = dataset_identifiers
-        self.state.current_dataset = self.input_paths[0]
+
+        self.context.repository = config["repository"]
+        self.state.repository_datasets = [
+            str(path) for path in discover_datasets(self.context.repository)
+        ]
+
+        self.state.all_datasets = self.state.input_datasets + self.state.repository_datasets
+
+        self.state.all_datasets_options = dataset_select_options(self.state.all_datasets)
+
+        self.state.current_dataset = self.state.all_datasets[0]
 
         images = Images(server=self.server)
 
@@ -87,6 +121,10 @@ class Engine(Applet):
         filtering_translator.add_translation("categories", "annotation_categories")
         self._filtering_app = FilteringApp(
             server=self.server.create_child_server(translator=filtering_translator),
+        )
+
+        self._export_app = ExportApp(
+            server=self.server.create_child_server(),
         )
 
         self._transforms_app.set_on_transform(self._embeddings_app.on_run_transformations)
@@ -161,7 +199,8 @@ class Engine(Applet):
         else:
             selected_images = images
 
-        self.state.dataset_ids = [str(img["id"]) for img in selected_images]
+        self.context.dataset_ids = [img["id"] for img in selected_images]
+        self.state.dataset_ids = [str(image_id) for image_id in self.context.dataset_ids]
         self.state.user_selected_ids = self.state.dataset_ids
 
     def _build_ui(self):
@@ -172,9 +211,9 @@ class Engine(Applet):
 
         self.ui = ui.NrtkExplorerLayout(
             server=self.server,
-            dataset_paths=self.input_paths,
             embeddings_app=self._embeddings_app,
             filtering_app=self._filtering_app,
             transforms_app=self._transforms_app,
+            export_app=self._export_app,
             **extra_args,
         )

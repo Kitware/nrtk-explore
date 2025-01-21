@@ -1,4 +1,3 @@
-from pathlib import Path
 from trame.ui.quasar import QLayout
 from trame.widgets import quasar
 from trame.widgets import html
@@ -8,13 +7,13 @@ HORIZONTAL_SPLIT_DEFAULT_VALUE = 17
 VERTICAL_SPLIT_DEFAULT_VALUE = 40
 
 
-def parse_dataset_dirs(datasets):
-    return [{"label": Path(ds).name, "value": ds} for ds in datasets]
-
-
 class NrtkDrawer(html.Div):
     def __init__(
-        self, dataset_paths=[], embeddings_app=None, filtering_app=None, transforms_app=None
+        self,
+        embeddings_app=None,
+        filtering_app=None,
+        transforms_app=None,
+        export_app=None,
     ):
         super().__init__(classes="q-pa-md q-gutter-md")
 
@@ -27,7 +26,7 @@ class NrtkDrawer(html.Div):
                     quasar.QSelect(
                         label="Dataset",
                         v_model=("current_dataset",),
-                        options=(parse_dataset_dirs(dataset_paths),),
+                        options=("all_datasets_options",),
                         filled=True,
                         emit_value=True,
                         map_options=True,
@@ -96,6 +95,14 @@ class NrtkDrawer(html.Div):
                 with card.slot_actions:
                     transforms_app.apply_ui()
 
+            # Export
+            if export_app.context.repository is not None:
+                with ui.CollapsibleCardUnslotted() as card:
+                    with card.slot_title:
+                        html.Span("Export Dataset", classes="text-h6")
+                    with card.slot_collapse:
+                        export_app.export_ui()
+
             # Filters
             with ui.CollapsibleCard() as card:
                 with card.slot_title:
@@ -138,10 +145,10 @@ class NrtkExplorerLayout(QLayout):
         self,
         server,
         reload=None,
-        dataset_paths=None,
         embeddings_app=None,
         filtering_app=None,
         transforms_app=None,
+        export_app=None,
         **kwargs,
     ):
         super().__init__(server, view="lhh LpR lff", classes="shadow-2 rounded-borders bg-grey-2")
@@ -162,10 +169,10 @@ class NrtkExplorerLayout(QLayout):
                     ) as split_drawer_main:
                         with split_drawer_main.slot_before:
                             NrtkDrawer(
-                                dataset_paths=dataset_paths,
                                 embeddings_app=embeddings_app,
                                 filtering_app=filtering_app,
                                 transforms_app=transforms_app,
+                                export_app=export_app,
                             )
                         with split_drawer_main.slot_after:
                             with Splitter(

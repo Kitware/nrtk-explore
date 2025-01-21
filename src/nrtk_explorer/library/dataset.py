@@ -5,7 +5,7 @@ Example:
     dataset = get_dataset("path/to/dataset.json")
 """
 
-from typing import Sequence as SequenceType
+from typing import Sequence as SequenceType, Union
 from abc import ABC, abstractmethod
 import os
 from functools import lru_cache
@@ -49,6 +49,24 @@ def is_coco_dataset(path: str):
     with open(path) as f:
         content = f.read()
     return all(key in content for key in required_keys)
+
+def discover_datasets(repository: Union[Path, None]) -> list[Path]:
+    datasets: list[Path] = []
+
+    if repository is None:
+        return datasets
+
+    for item in repository.iterdir():
+        if item.is_dir():
+            for file in item.iterdir():
+                if file.is_file() and file.suffix == ".json" and is_coco_dataset(str(file)):
+                    datasets.append(file)
+
+    return datasets
+
+
+def dataset_select_options(datasets: list[str]):
+    return [{"label": Path(ds).name, "value": ds} for ds in datasets]
 
 
 def expand_hugging_face_datasets(dataset_identifiers: SequenceType[str], streaming=True):

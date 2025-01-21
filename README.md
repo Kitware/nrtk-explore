@@ -54,6 +54,7 @@ nrtk-explorer --dataset ./nrtk_explorer_datasets/coco-od-2017/mini_val2017.json 
   or a directory loadable by the [Dataset](https://huggingface.co/docs/datasets/index) library.
   You can specify multiple datasets using a space as the
   separator. Example: `nrtk-explorer --dataset ../foo-dir/coco.json cppe-5`
+- `--repository` Specify an existing directory where exported datasets will be saved to and loaded from.
 - `--download` Cache Hugging Face Hub datasets locally instead of streaming them.
   When datasets are streamed, nrtk-explorer limits the number of loaded images.
 - `--models` specify the Hugging Face Hub [object detection](https://huggingface.co/models?pipeline_tag=object-detection&library=transformers&sort=trending)
